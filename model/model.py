@@ -15,7 +15,7 @@ def get_padding_size(dimension_size, stride, kernel_size):
     :param kernel_size: The size of the convolution kernel
     :return: The padding needed to maintain a "same" convolution
     """
-    return (dimension_size * (stride - 1) + kernel_size - stride) / 2
+    return (dimension_size * (stride - 1) + kernel_size - stride) // 2
 
 class ResidualBlock(nn.Module):
     """
@@ -25,23 +25,26 @@ class ResidualBlock(nn.Module):
                  depth=3, downsample_after=True):
         super(ResidualBlock, self).__init__()
 
+        self.input_size = input_size
+        self.out_channels = out_channels
         self.downsample_after = downsample_after
 
         # Define the structure of the residual block
         padding_amount = get_padding_size(input_size, stride, kernel_size)
+        print(f"Needed padding: {padding_amount}")
 
         # Define the convolution layers
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding_amount)
-        self.bn1 = nn.BatchNorm2d(input_size * input_size * out_channels)
+        self.bn1 = nn.BatchNorm2d(out_channels)
 
         self.conv_layers = [nn.Conv2d(out_channels, out_channels, kernel_size, stride=stride, padding=padding_amount)
                             for _ in range(depth - 1)]
-        self.batch_norms = [nn.BatchNorm2d(input_size * input_size * out_channels) for _ in range(depth - 1)]
+        self.batch_norms = [nn.BatchNorm2d(out_channels) for _ in range(depth - 1)]
 
         # Define the downsampling layer if necessary
         if downsample_after:
-            self.strided_conv = nn.Conv2d(out_channels, out_channels, kernel_size, stride=2)
-            self.final_bn = nn.BatchNorm2d(out_channels * (input_size / 2) ** 2)
+            self.strided_conv = nn.Conv2d(out_channels, out_channels, kernel_size, stride=2, padding=1)
+            self.final_bn = nn.BatchNorm2d(out_channels)
 
     def forward(self, x):
         """
@@ -57,3 +60,12 @@ class ResidualBlock(nn.Module):
 
         return x
 
+    def get_num_flat_features(self):
+        """
+        Returns the number of flattened output features for downstream linear layers
+        :return: The number of flat features
+        """
+        if self.downsample_after:
+            return (self.input_size // 2) ** 2 * self.out_channels
+        else:
+            return self.input_size ** 2 * self.out_channels
