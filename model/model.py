@@ -5,15 +5,11 @@ This file defines the models used in the PyTorch implementation of the project
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 
 """
-For testing utils
+HELPERS
 """
-import sys
-sys.path.append("../")
-
-from utils.utils import write_graph
-
 def get_padding_size(dimension_size, stride, kernel_size):
     """
     Returns the padding needed to keep the output of a convolution layer the same size
@@ -85,6 +81,28 @@ class ResidualBlock(nn.Module):
         else:
             return self.input_size ** 2 * self.out_channels
 
+class UpsampleBlock(nn.Module):
+    def __init__(self, input_size, in_channels, out_channels, depth=3):
+        """
+        Upsample by factor of 2 then apply residual block
+        :param depth: The depth (number of conv layers before next upsample)
+        """
+        super(UpsampleBlock, self).__init__()
+
+        self.upsample = nn.ConvTranspose2d(in_channels, out_channels, 3, stride=2, padding=1, output_padding=1)
+        self.res_block = ResidualBlock(input_size, out_channels, out_channels, 3, depth=2, downsample_after=False)
+
+    def forward(self, x):
+        """
+        Runs the forward pass on the upsample block
+        """
+        x = self.upsample(x)
+        return self.res_block(x)
+
+"""
+IMAGE ENCODER AND DECODER
+"""
+
 class ImageEncoder(nn.Module):
     def __init__(self, input_size, latent_dim, num_blocks=4):
         """
@@ -115,3 +133,47 @@ class ImageEncoder(nn.Module):
         x = x.view(x.size()[0], -1)
 
         return F.relu(self.fully_connected(x))
+
+class ImageDecoder(nn.Module):
+    def __init__(self, latent_dim, input_size, num_blocks=4):
+
+        """
+        The image decoder
+        """
+        super(ImageDecoder, self).__init__()
+        # Compute what the dimension of the first deconv input will be
+        self.dim_after_downsample = int(input_size // (2 ** num_blocks))
+        self.fc1 = nn.Linear(latent_dim, self.dim_after_downsample ** 2 * 128)
+        self.bn1 = nn.BatchNorm1d(self.dim_after_downsample ** 2 * 128)
+
+        # The deconvolution layers
+        sizes = [int(input_size // (2 ** i)) for i in range(1, num_blocks)]
+        sizes.reverse()
+        self.upsample_layers = nn.ModuleList([UpsampleBlock(size, 128, 128) for size in sizes])
+
+        self.final_upsample = UpsampleBlock(input_size, 128, 128)
+        self.channel_shrink = nn.Conv2d(128, 3, 1)
+
+    def forward(self, x):
+        x = self.bn1(F.relu(self.fc1(x)))
+
+        # Reshape correctly
+        x = x.view(-1, 128, self.dim_after_downsample, self.dim_after_downsample)
+
+        for upsample in self.upsample_layers:
+            x = upsample(x)
+
+        x = self.final_upsample(x)
+        return self.channel_shrink(x)
+
+input = torch.rand((10, 3, 256, 256))
+encoder = ImageEncoder(256, 12)
+decoder = ImageDecoder(12, 256)
+
+criterion = nn.MSELoss()
+optimizer = optim.SGD(list(encoder.parameters()) + list(decoder.parameters()), lr=0.01)
+
+
+"""
+TEXT ENCODER AND DECODER
+"""
