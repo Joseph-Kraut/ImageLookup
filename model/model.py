@@ -6,6 +6,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+"""
+For testing utils
+"""
+import sys
+sys.path.append("../")
+
+from utils.utils import write_graph
+
 def get_padding_size(dimension_size, stride, kernel_size):
     """
     Returns the padding needed to keep the output of a convolution layer the same size
@@ -36,23 +44,31 @@ class ResidualBlock(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding_amount)
         self.bn1 = nn.BatchNorm2d(out_channels)
 
-        self.conv_layers = [nn.Conv2d(out_channels, out_channels, kernel_size, stride=stride, padding=padding_amount)
-                            for _ in range(depth - 1)]
-        self.batch_norms = [nn.BatchNorm2d(out_channels) for _ in range(depth - 1)]
+        self.conv_layers = nn.ModuleList([nn.Conv2d(out_channels, out_channels, kernel_size, stride=stride, padding=padding_amount)
+                            for _ in range(depth - 1)])
+        self.batch_norms = nn.ModuleList([nn.BatchNorm2d(out_channels) for _ in range(depth - 1)])
 
         # Define the downsampling layer if necessary
         if downsample_after:
             self.strided_conv = nn.Conv2d(out_channels, out_channels, kernel_size, stride=2, padding=1)
             self.final_bn = nn.BatchNorm2d(out_channels)
 
+        # Build the architecture needed to complete the residual connection
+        self.depth_expansion = nn.Conv2d(in_channels, out_channels, 1)
+        self.expansion_norm = nn.BatchNorm2d(out_channels)
+
     def forward(self, x):
         """
         Computes the forward pass on an input
         """
+        initial_input = x
         x = self.bn1(F.relu(self.conv1(x)))
 
         for layer_index in range(len(self.conv_layers)):
             x = self.batch_norms[layer_index](F.relu(self.conv_layers[layer_index](x)))
+
+        # Add the residual connection
+        x += self.expansion_norm(self.depth_expansion(initial_input))
 
         if self.downsample_after:
             x = self.final_bn(F.relu(self.strided_conv(x)))
@@ -80,7 +96,7 @@ class ImageEncoder(nn.Module):
         input_sizes = [input_size * 2 ** (-1 * i) for i in range(1, num_blocks)]
         self.init_block = ResidualBlock(input_size, 3, 128, 3)
 
-        self.res_blocks = [ResidualBlock(in_size, 128, 128, 3) for in_size in input_sizes]
+        self.res_blocks = nn.ModuleList([ResidualBlock(in_size, 128, 128, 3) for in_size in input_sizes])
 
         final_input_size = int(input_size * (2 ** (-num_blocks)))
         self.fully_connected = nn.Linear(128 * (final_input_size) ** 2, latent_dim)
@@ -99,5 +115,3 @@ class ImageEncoder(nn.Module):
         x = x.view(x.size()[0], -1)
 
         return F.relu(self.fully_connected(x))
-
-
