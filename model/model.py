@@ -166,14 +166,6 @@ class ImageDecoder(nn.Module):
         x = self.final_upsample(x)
         return self.channel_shrink(x)
 
-input = torch.rand((10, 3, 256, 256))
-encoder = ImageEncoder(256, 12)
-decoder = ImageDecoder(12, 256)
-
-criterion = nn.MSELoss()
-optimizer = optim.SGD(list(encoder.parameters()) + list(decoder.parameters()), lr=0.01)
-
-
 """
 TEXT ENCODER AND DECODER
 """

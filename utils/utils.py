@@ -3,6 +3,8 @@ This file defines a series of utils for training, testing, and debugging
 """
 import torch
 from torch.utils.tensorboard import SummaryWriter
+import numpy as np
+import matplotlib.pyplot as plt
 
 def write_graph(network, input_dims):
     """
@@ -21,4 +23,21 @@ def write_graph(network, input_dims):
     writer.add_graph(network, input_to_model=dummy_input, verbose=False)
     writer.flush()
     writer.close()
+
+def show_img_and_cap(img, cap):
+    """
+    Displays an image and captions
+    :param img: The image to display as a tensor
+    :param cap: The list of captions to print out
+    :return: None
+    """
+    plt.imshow(np.transpose(img.numpy(), (1,2,0)))
+    plt.show()
+
+    print("Captions:")
+    for index, caption in cap:
+        print(f"{index}. {caption}")
+
+
+
 
